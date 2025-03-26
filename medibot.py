@@ -1,10 +1,17 @@
 import os
+import asyncio
 import streamlit as st
 from langchain_community.embeddings import HuggingFaceEmbeddings
 from langchain.chains import RetrievalQA
 from langchain_community.vectorstores import FAISS
 from langchain_core.prompts import PromptTemplate
 from langchain_huggingface import HuggingFaceEndpoint
+
+# Ensure asyncio event loop is running
+try:
+    asyncio.get_running_loop()
+except RuntimeError:
+    asyncio.set_event_loop(asyncio.new_event_loop())
 
 # Path to FAISS vector store
 DB_FAISS_PATH = "vectorstore/db_faiss"
@@ -29,20 +36,23 @@ with st.sidebar:
 @st.cache_resource
 def get_vectorstore():
     """Load FAISS vector store with sentence-transformers embeddings."""
-    embedding_model = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
-    vectorstore = FAISS.load_local(DB_FAISS_PATH, embedding_model, allow_dangerous_deserialization=True)
-    return vectorstore
+    try:
+        embedding_model = HuggingFaceEmbeddings(model_name='sentence-transformers/all-MiniLM-L6-v2')
+        vectorstore = FAISS.load_local(DB_FAISS_PATH, embedding_model, allow_dangerous_deserialization=True)
+        return vectorstore
+    except Exception as e:
+        st.error(f"❌ Error loading vector store: {e}")
+        return None
 
 
 def set_custom_prompt():
     """Set custom instruction prompt for chatbot."""
     return PromptTemplate(
-
         template="""
         You are an advanced AI assistant specializing in **medical diagnosis and healthcare insights**.  
         Use the provided **context** to deliver accurate, relevant, and professional responses.  
 
-        ---
+        ---  
 
         ### 🔹 **Response Guidelines:**  
         ✅ **If the context contains medical information**, provide a **clear and concise diagnosis or advice.**  
@@ -52,7 +62,7 @@ def set_custom_prompt():
         🚨 **If the query requires urgent medical attention**, advise:  
            _"Please consult a healthcare professional immediately."_  
 
-        ---
+        ---  
 
         ### **Context (Medical Data / Symptoms / Reports):**  
         {context}  
@@ -62,17 +72,21 @@ def set_custom_prompt():
 
         💡 **AI Medical Response:** (Start directly)
         """,
-        input_variables = ["context", "question"]
+        input_variables=["context", "question"]
     )
 
 
 def load_llm(repo_id, HF_TOKEN, temperature):
     """Load HuggingFace LLM with provided repo ID and token."""
-    return HuggingFaceEndpoint(
-        repo_id=repo_id,
-        temperature=temperature,
-        model_kwargs={"token": HF_TOKEN, "max_length": 512}
-    )
+    try:
+        return HuggingFaceEndpoint(
+            repo_id=repo_id,
+            temperature=temperature,
+            model_kwargs={"token": HF_TOKEN, "max_length": 512}
+        )
+    except Exception as e:
+        st.error(f"❌ Error loading LLM: {e}")
+        return None
 
 
 def main():
@@ -94,16 +108,22 @@ def main():
         st.chat_message("user").markdown(prompt)
         st.session_state.messages.append({"role": "user", "content": prompt})
 
-        HF_TOKEN = os.environ.get("HF_TOKEN")
-        vectorstore = get_vectorstore()
-
-        if vectorstore is None:
-            st.error("Error: Could not load the vector store.")
+        HF_TOKEN = os.getenv("HF_TOKEN")
+        if not HF_TOKEN:
+            st.error("❌ HuggingFace token not found. Set HF_TOKEN in environment variables.")
             return
 
+        vectorstore = get_vectorstore()
+        if vectorstore is None:
+            return  # Error already displayed
+
         try:
+            llm_model = load_llm(HUGGINGFACE_REPO_ID, HF_TOKEN, response_temp)
+            if llm_model is None:
+                return  # Error already displayed
+
             qa_chain = RetrievalQA.from_chain_type(
-                llm=load_llm(HUGGINGFACE_REPO_ID, HF_TOKEN, response_temp),
+                llm=llm_model,
                 chain_type="stuff",
                 retriever=vectorstore.as_retriever(search_kwargs={'k': 3}),
                 return_source_documents=True,
