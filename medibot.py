@@ -76,13 +76,26 @@ def set_custom_prompt():
     )
 
 
+# def load_llm(repo_id, HF_TOKEN, temperature):
+#     """Load HuggingFace LLM with provided repo ID and token."""
+#     try:
+#         return HuggingFaceEndpoint(
+#             repo_id=repo_id,
+#             temperature=temperature,
+#             model_kwargs={"token": HF_TOKEN, "max_length": 512}
+#         )
+#     except Exception as e:
+#         st.error(f"❌ Error loading LLM: {e}")
+#         return None
+
+
 def load_llm(repo_id, HF_TOKEN, temperature):
     """Load HuggingFace LLM with provided repo ID and token."""
     try:
         return HuggingFaceEndpoint(
             repo_id=repo_id,
             temperature=temperature,
-            model_kwargs={"token": HF_TOKEN, "max_length": 512}
+            huggingfacehub_api_token=HF_TOKEN,
         )
     except Exception as e:
         st.error(f"❌ Error loading LLM: {e}")
